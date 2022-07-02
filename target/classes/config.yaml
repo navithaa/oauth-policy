@@ -1,0 +1,13 @@
+http:
+  port: "8080"
+
+httpReq:
+  host: "bms-db-sys-api.us-e2.cloudhub.io"
+  port: "80"
+  
+httpReqSelf:
+  host: "oauth-policy.us-e2.cloudhub.io"
+  port: "80"
+
+client_secret: "![Kev/lBTr8NLlCtKNLWvn7c9WB+yXvWUsdQeq1k+WWN3e6skIc5jehQ==]"
+client_id: "![1yivPuZE94VtewrA2NlmJAtlVYeAGcJ/tFyO03p+qI/zflUx2740Eg==]"

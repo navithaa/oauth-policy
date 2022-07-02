@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:oauth2-provider="http://www.mulesoft.org/schema/mule/oauth2-provider"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/oauth2-provider http://www.mulesoft.org/schema/mule/oauth2-provider/current/mule-oauth2-provider.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<os:object-store name="client_os_user" doc:name="Object store" doc:id="bcd6644f-7f9b-4cf8-aefd-3a536c970c93" />
+	<os:object-store name="token_os_user" doc:name="Object store" doc:id="baea6794-bb56-4570-a442-fad62daaaf19" />
+	<oauth2-provider:config name="OAuth2_Provider_Config_User" doc:name="OAuth2 Provider Config" doc:id="a63d537e-456b-4bc7-9951-4b2f868449fd" listenerConfig="HTTP_Listener_config" clientStore="client_os_user" supportedGrantTypes="CLIENT_CREDENTIALS" >
+		<oauth2-provider:token-config tokenStore="token_os_user" path="/userToken"/>
+		<oauth2-provider:authorization-config path="/authorizeUser" />
+	</oauth2-provider:config>
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="a881dd91-6969-42a5-966a-7037c015f756" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<flow name="getUserTokenFlow" doc:id="b613ebdd-9bfd-495c-af73-aa205ed595a4" >
+		<http:listener doc:name="Listener" doc:id="d709bd07-edfc-4a97-97c6-ed2f622b162a" path="/user/token" config-ref="HTTP_Listener_config"/>
+		<http:request method="GET" doc:name="Request" doc:id="4997f127-c892-4317-b6b7-0b6cc016c69f" path="/authorize/user" target="userCredentials" config-ref="HTTP_Request_configuration">
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+	"client_id" : p('secure::client_id'),
+	"client_secret": p('secure::client_secret')
+}]]]></http:headers>
+			<http:query-params ><![CDATA[#[{
+	"userId": attributes.headers.id,
+	"password": attributes.headers.password
+}]]]></http:query-params>
+		</http:request>
+		<choice doc:name="Choice" doc:id="a18febb6-d5ee-4634-90ed-ff94a89a2538">
+			<when expression="#[vars.userCredentials == null]">
+				<raise-error doc:name="Raise error Invalid Credentials" doc:id="9923d58d-14db-40d7-9b49-cffd796eebb5" type="AUTH:INVALID_CREDENTIALS" description="Invalid Credentials" />
+			</when>
+		</choice>
+		<try doc:name="Try" doc:id="c30832ff-04c2-45a1-a90e-8560b5f4dc74">
+			<oauth2-provider:create-client doc:name="Create user client" doc:id="fd760be4-40b1-4ca2-80af-ba0210b7eadf" config-ref="OAuth2_Provider_Config_User" clientId="#[attributes.headers.id]" type="CONFIDENTIAL" secret="#[attributes.headers.password]" clientName="#[attributes.headers.client_name]" description='#[""]' principal='#[""]' redirectUris='#[["abc.com"]]' authorizedGrantTypes='#[["CLIENT_CREDENTIALS"]]' failIfPresent="true" />
+			<error-handler>
+				<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="3a9c1936-266a-4e01-a6ce-2b6dff2c275d" type="OAUTH2-PROVIDER:CLIENT_ALREADY_EXISTS">
+					<logger level="INFO" doc:name="INFO: Client Already Exist" doc:id="2bf362b2-49ed-4ab2-9f2d-0dc5457fdaf2" message="Client Already Exist" />
+				</on-error-continue>
+			</error-handler>
+		</try>
+		<http:request method="POST" doc:name="Request For Token" doc:id="e7134f41-9106-4952-9a0f-a8d7644a2d74" url="http://${httpReqSelf.host}:${httpReqSelf.port}/userToken">
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+	"client_id" : attributes.headers.id,
+	"client_secret": attributes.headers.password,
+	"grant_type": attributes.headers.grant_type
+}]]]></http:headers>
+		</http:request>
+	
+</flow>
+	<flow name="validateUserFlow" doc:id="e40eda31-7d06-4cdc-a33c-c996d932681c" >
+		<http:listener doc:name="Listener" doc:id="5f2cbd77-12c6-45d9-9d70-d73907e9f161" path="/user/validate" config-ref="HTTP_Listener_config"/>
+		<oauth2-provider:validate-token doc:name="Validate token" doc:id="686551cf-20d7-454e-a229-2672dec0d765" config-ref="OAuth2_Provider_Config_User"/>
+		<ee:transform doc:name="Transform Message" doc:id="afc4b4ed-c2e9-4991-9bb3-20fb8708f88e" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<os:object-store name="client_os_org" doc:name="Object store" doc:id="30d5ee44-832a-4cee-8a78-cbb038a28e98" />
+	<os:object-store name="token_os_org" doc:name="Object store" doc:id="9cf7e4ce-ad84-4b51-ad5e-45912e00063e" />
+	<oauth2-provider:config name="OAuth2_Provider_Config_organizer" doc:name="OAuth2 Provider Config" doc:id="6da69ce2-2d85-428e-8a60-169ddb9f9eee" listenerConfig="HTTP_Listener_config" clientStore="client_os_org" supportedGrantTypes="CLIENT_CREDENTIALS">
+		<oauth2-provider:token-config tokenStore="token_os_org" path="/organizerToken"/>
+		<oauth2-provider:authorization-config path="/authorizeOrganizer" />
+	</oauth2-provider:config>
+	<flow name="getOrganizerTokenFlow" doc:id="f8d54f2d-0d2b-4b6a-8813-aa6334484c00" >
+		<http:listener doc:name="Listener" doc:id="c18ac65b-3f16-4ed9-8b12-127debb27fa6" path="/organizer/token" config-ref="HTTP_Listener_config"/>
+		<http:request method="GET" doc:name="Request" doc:id="68158a9e-fd32-44a0-a3ba-ed1b51b6f0f5" path="/authorize/organizer" target="organizerCredentials" config-ref="HTTP_Request_configuration">
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+	"client_id" : p('secure::client_id'),
+	"client_secret": p('secure::client_secret')
+}]]]></http:headers>
+			<http:query-params ><![CDATA[#[{
+	"orgId": attributes.headers.id,
+	"password": attributes.headers.password
+}]]]></http:query-params>
+		</http:request>
+		<choice doc:name="Choice" doc:id="ce11cec5-6cfd-4349-be35-59cbe4e3df83" >
+			<when expression="#[vars.organizerCredentials == null]" >
+				<raise-error doc:name="Raise error Invalid Credentials" doc:id="4123c28c-91f3-497f-b5fc-5604055a7dd6" type="AUTH:INVALID_CREDENTIALS" description="Invalid Credentials" />
+			</when>
+		</choice>
+		<try doc:name="Try" doc:id="37605253-0538-4d92-ace7-c75c0ab00d99" >
+			<oauth2-provider:create-client doc:name="Create orgainzer client" doc:id="a2153e2c-79ff-496f-bc5f-01bd75d98b26" config-ref="OAuth2_Provider_Config_organizer" clientId="#[attributes.headers.id]" type="CONFIDENTIAL" secret="#[attributes.headers.password]" clientName="#[attributes.headers.client_name]" description='#[""]' principal='#[""]' redirectUris='#[["abc.com"]]' authorizedGrantTypes='#[["CLIENT_CREDENTIALS"]]' failIfPresent="true" />
+			<error-handler >
+				<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="0cef09bc-9c86-45a9-841f-9818539f7ee1" type="OAUTH2-PROVIDER:CLIENT_ALREADY_EXISTS" >
+					<logger level="INFO" doc:name="INFO: Client Already Exist" doc:id="602003d5-797c-4518-b090-ee12f821528b" message="Client Already Exist" />
+				</on-error-continue>
+			</error-handler>
+		</try>
+		<http:request method="POST" doc:name="Request For Token" doc:id="0798c3a5-50b0-4456-b801-ac9c4ad4bdb7" url="http://${httpReqSelf.host}:${httpReqSelf.port}/organizerToken" >
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+	"client_id" : attributes.headers.id,
+	"client_secret": attributes.headers.password,
+	"grant_type": attributes.headers.grant_type
+}]]]></http:headers>
+		</http:request>
+	</flow>
+	<flow name="validateOrganizerFlow" doc:id="f17a9d0f-4765-4b06-a6cd-21822173522e">
+		<http:listener doc:name="Listener" doc:id="eccc46e2-a509-44b6-be91-d3755b285d1b" path="/organizer/validate" config-ref="HTTP_Listener_config"/>
+		<oauth2-provider:validate-token doc:name="Validate token" doc:id="90ef26c2-024d-4956-82be-6558a076e271" config-ref="OAuth2_Provider_Config_organizer" />
+		<ee:transform doc:name="Transform Message" doc:id="fd980750-2be8-4eba-8c5c-0201c7991264">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<os:object-store name="client_os_admin" doc:name="Object store" doc:id="422ec8a7-83a3-4c25-b07c-1e113dc421f9" />
+	<os:object-store name="token_os_admin" doc:name="Object store" doc:id="361dadf6-d2aa-42d5-b098-f27dc8c4982a" />
+	<oauth2-provider:config name="OAuth2_Provider_Config_Admin" doc:name="OAuth2_Provider_Config_Admin" doc:id="3b3661c2-abc4-4308-8845-161b9b64fffb" listenerConfig="HTTP_Listener_config" clientStore="client_os_admin" supportedGrantTypes="CLIENT_CREDENTIALS" >
+		<oauth2-provider:token-config tokenStore="token_os_admin" path="/adminToken"/>
+		<oauth2-provider:authorization-config path="/authorizeAdmin" />
+	</oauth2-provider:config>
+	<flow name="getAdminTokenFlow" doc:id="0bb50107-c788-45dd-9663-1b71775c116e" >
+		<http:listener doc:name="Listener" doc:id="ccc42046-4daa-4185-9d64-71fe251ee917" path="/admin/token" config-ref="HTTP_Listener_config"/>
+		<http:request method="GET" doc:name="Request" doc:id="1c0fe4ff-80fa-4bf0-88e5-3e13f4479c69" path="/authorize/admin" target="adminCredentials" config-ref="HTTP_Request_configuration">
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+	"client_id" : p('secure::client_id'),
+	"client_secret": p('secure::client_secret')
+}]]]></http:headers>
+			<http:query-params ><![CDATA[#[{
+	"adminId": attributes.headers.id,
+	"password": attributes.headers.password
+}]]]></http:query-params>
+		</http:request>
+		<choice doc:name="Choice" doc:id="b338388d-d5fe-46d4-91e1-14446b8cbae1" >
+			<when expression="#[vars.adminCredentials == null]" >
+				<raise-error doc:name="Raise error Invalid Credentials" doc:id="268715ad-9421-4222-ae9d-93c6aba4dbf7" type="AUTH:INVALID_CREDENTIALS" description="Invalid Credentials" />
+			</when>
+		</choice>
+		<try doc:name="Try" doc:id="a8665d2c-b410-4f38-a0ca-2e8e1f643878" >
+			<oauth2-provider:create-client doc:name="Create admin client" doc:id="30a74cab-55cc-4759-919b-0703cd9ffea2" config-ref="OAuth2_Provider_Config_Admin" clientId="#[attributes.headers.id]" type="CONFIDENTIAL" secret="#[attributes.headers.password]" clientName="#[attributes.headers.client_name]" description='#[""]' principal='#[""]' redirectUris='#[["abc.com"]]' authorizedGrantTypes='#[["CLIENT_CREDENTIALS"]]' failIfPresent="true" />
+			<error-handler >
+				<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="5d2047c2-b564-48b0-b9ef-039861e35d43" type="OAUTH2-PROVIDER:CLIENT_ALREADY_EXISTS" >
+					<logger level="INFO" doc:name="INFO: Client Already Exist" doc:id="f4014266-3ea0-44d4-895e-626cfe3d08b3" message="Client Already Exist" />
+				</on-error-continue>
+			</error-handler>
+		</try>
+		<http:request method="POST" doc:name="Request For Token" doc:id="73b49009-d278-4801-be09-d712d26e2abc" url="http://${httpReqSelf.host}:${httpReqSelf.port}/adminToken" >
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+	"client_id" : attributes.headers.id,
+	"client_secret": attributes.headers.password,
+	"grant_type": attributes.headers.grant_type
+}]]]></http:headers>
+		</http:request>
+	</flow>
+	<flow name="validateAdminFlow" doc:id="28ff28f5-7a9f-4b25-871d-34232198c2fe" >
+		<http:listener doc:name="Listener" doc:id="2c928e5f-170d-465a-b709-72cb07399a79" path="/admin/validate" config-ref="HTTP_Listener_config"/>
+		<oauth2-provider:validate-token doc:name="Validate token" doc:id="48b281db-59cd-477a-8658-132404e38f7f" config-ref="OAuth2_Provider_Config_Admin" />
+		<ee:transform doc:name="Transform Message" doc:id="656c82c2-85b9-4446-bda8-ed04f1abcb62" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<http:request-config name="HTTP_Request_configuration" doc:name="HTTP Request configuration" doc:id="71ff3441-324e-4f34-8c26-fdbba3a5507a" basePath="/api">
+		<http:request-connection host="${httpReq.host}" port="${httpReq.port}" />
+	</http:request-config>
+</mule>
